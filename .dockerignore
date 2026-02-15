@@ -1,5 +1,8 @@
 .git
 .worktrees
+.env
+.env.*
+!.env.example
 .bun-cache
 .bun
 .tmp

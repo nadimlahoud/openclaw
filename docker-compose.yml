@@ -12,8 +12,8 @@ services:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+      - "${OPENCLAW_GATEWAY_HOST_IP:-127.0.0.1}:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "${OPENCLAW_BRIDGE_HOST_IP:-127.0.0.1}:${OPENCLAW_BRIDGE_PORT:-18790}:18790"
     init: true
     restart: unless-stopped
     command:
@@ -44,3 +44,9 @@ services:
     tty: true
     init: true
     entrypoint: ["node", "dist/index.js"]
+
+volumes:
+  openclaw_config:
+    name: openclaw_config
+  openclaw_workspace:
+    name: openclaw_workspace
