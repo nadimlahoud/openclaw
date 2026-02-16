@@ -1,0 +1,54 @@
+{
+  "id": "msgvault",
+  "name": "msgvault",
+  "description": "Search and retrieve local msgvault email archives via HTTP API.",
+  "skills": ["./skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "description": "Base URL for msgvault API (default: http://127.0.0.1:8080)."
+      },
+      "apiKeyEnv": {
+        "type": "string",
+        "description": "Environment variable that stores the msgvault API key."
+      },
+      "timeoutMs": {
+        "type": "number",
+        "description": "HTTP timeout in milliseconds."
+      },
+      "allowSync": {
+        "type": "boolean",
+        "description": "Allow msgvault_sync_account tool execution."
+      },
+      "defaultAccount": {
+        "type": "string",
+        "description": "Default account email used when account is omitted."
+      }
+    }
+  },
+  "uiHints": {
+    "baseUrl": {
+      "label": "msgvault API Base URL",
+      "placeholder": "http://127.0.0.1:8080"
+    },
+    "apiKeyEnv": {
+      "label": "API Key Env Var",
+      "help": "Environment variable name that contains the msgvault API key."
+    },
+    "timeoutMs": {
+      "label": "Request Timeout (ms)",
+      "advanced": true
+    },
+    "allowSync": {
+      "label": "Allow Sync Tool",
+      "help": "When disabled, msgvault_sync_account returns a policy error."
+    },
+    "defaultAccount": {
+      "label": "Default Account",
+      "placeholder": "user@example.com"
+    }
+  }
+}

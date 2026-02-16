@@ -232,6 +232,10 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/open-prose/**"
+"extensions: msgvault":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/msgvault/**"
 "extensions: qwen-portal-auth":
   - changed-files:
       - any-glob-to-any-file:
