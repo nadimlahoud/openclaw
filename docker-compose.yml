@@ -47,6 +47,8 @@ services:
 
 volumes:
   openclaw_config:
+    external: true
     name: openclaw_config
   openclaw_workspace:
+    external: true
     name: openclaw_workspace
