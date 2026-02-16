@@ -41,6 +41,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print candidate count without deleting",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=60,
+        help="IMAP socket timeout in seconds (default: 60)",
+    )
     return parser.parse_args()
 
 
@@ -58,13 +64,18 @@ def _parse_list_line(line: bytes) -> tuple[set[str], str] | None:
     return flags, name
 
 
-def resolve_mailbox(client: imaplib.IMAP4_SSL, requested: str) -> str:
+def _list_mailboxes(client: imaplib.IMAP4_SSL) -> list[tuple[set[str], str]]:
     typ, data = client.list()
     if typ != "OK" or not data:
-        return requested
+        return []
 
     parsed = [_parse_list_line(line) for line in data if isinstance(line, (bytes, bytearray))]
     parsed = [item for item in parsed if item is not None]
+    return parsed
+
+
+def resolve_mailbox(client: imaplib.IMAP4_SSL, requested: str) -> str:
+    parsed = _list_mailboxes(client)
     if not parsed:
         return requested
 
@@ -84,6 +95,16 @@ def resolve_mailbox(client: imaplib.IMAP4_SSL, requested: str) -> str:
     return requested
 
 
+def resolve_mailbox_by_flag(
+    client: imaplib.IMAP4_SSL, special_flag: str, fallback: str
+) -> str:
+    parsed = _list_mailboxes(client)
+    for flags, name in parsed:
+        if special_flag in flags:
+            return name
+    return fallback
+
+
 def quote_mailbox(name: str) -> str:
     escaped = name.replace("\\", "\\\\").replace('"', r"\"")
     return f'"{escaped}"'
@@ -96,12 +117,12 @@ def main() -> int:
         print("--older-than-days must be >= 1", file=sys.stderr)
         return 2
     if args.batch_size < 1:
-        print("--batch-size must be >= 1", file=sys.stderr)
+        print("--batch-size must be >= 1", file=sys.stderr, flush=True)
         return 2
 
     password = os.environ.get("GMAIL_APP_PASSWORD")
     if not password:
-        print("GMAIL_APP_PASSWORD is required in environment", file=sys.stderr)
+        print("GMAIL_APP_PASSWORD is required in environment", file=sys.stderr, flush=True)
         return 2
 
     cutoff = (dt.datetime.now(dt.UTC) - dt.timedelta(days=args.older_than_days)).strftime(
@@ -110,54 +131,92 @@ def main() -> int:
     print(
         f"Prune target: mailbox={args.mailbox} older_than_days={args.older_than_days} "
         f"cutoff={cutoff} batch_size={args.batch_size} dry_run={args.dry_run}"
-    )
+    , flush=True)
 
-    client = imaplib.IMAP4_SSL(args.host)
+    client = imaplib.IMAP4_SSL(args.host, timeout=args.timeout)
     try:
         typ, _ = client.login(args.email, password)
         if typ != "OK":
-            print("IMAP login failed", file=sys.stderr)
+            print("IMAP login failed", file=sys.stderr, flush=True)
             return 1
 
-        mailbox = resolve_mailbox(client, args.mailbox)
-        typ, _ = client.select(quote_mailbox(mailbox))
+        mailbox_all = resolve_mailbox(client, args.mailbox)
+        typ, _ = client.select(quote_mailbox(mailbox_all))
         if typ != "OK":
-            print(f'Failed to select mailbox "{mailbox}"', file=sys.stderr)
+            print(f'Failed to select mailbox "{mailbox_all}"', file=sys.stderr, flush=True)
             return 1
 
         typ, data = client.uid("SEARCH", None, "BEFORE", cutoff)
         if typ != "OK":
-            print("IMAP search failed", file=sys.stderr)
+            print("IMAP search failed", file=sys.stderr, flush=True)
             return 1
 
         raw = data[0] if data and data[0] else b""
         uids = raw.split() if raw else []
         total = len(uids)
-        print(f"Matched UIDs: {total}")
+        print(f"Matched UIDs: {total}", flush=True)
 
         if args.dry_run or total == 0:
             return 0
 
-        deleted = 0
+        moved = 0
         for idx in range(0, total, args.batch_size):
             batch = uids[idx : idx + args.batch_size]
+            uid_set = b",".join(batch).decode()
+
+            typ, _ = client.uid("STORE", uid_set, "+X-GM-LABELS.SILENT", r"(\Trash)")
+            if typ != "OK":
+                print(
+                    f"Failed to move batch starting at index {idx} to Trash",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return 1
+
+            moved += len(batch)
+            print(f"MovedToTrash {moved}/{total}", flush=True)
+
+        mailbox_trash = resolve_mailbox_by_flag(client, r"\Trash", "[Gmail]/Trash")
+        typ, _ = client.select(quote_mailbox(mailbox_trash))
+        if typ != "OK":
+            print(f'Failed to select Trash mailbox "{mailbox_trash}"', file=sys.stderr, flush=True)
+            return 1
+
+        typ, trash_data = client.uid("SEARCH", None, "BEFORE", cutoff)
+        if typ != "OK":
+            print("IMAP Trash search failed", file=sys.stderr, flush=True)
+            return 1
+
+        trash_raw = trash_data[0] if trash_data and trash_data[0] else b""
+        trash_uids = trash_raw.split() if trash_raw else []
+        trash_total = len(trash_uids)
+        print(f"TrashPurgeCandidates: {trash_total}", flush=True)
+
+        purged = 0
+        for idx in range(0, trash_total, args.batch_size):
+            batch = trash_uids[idx : idx + args.batch_size]
             uid_set = b",".join(batch).decode()
 
             typ, _ = client.uid("STORE", uid_set, "+FLAGS.SILENT", r"(\Deleted)")
             if typ != "OK":
                 print(
-                    f"Failed to mark batch starting at index {idx} as deleted",
+                    f"Failed to mark trash batch starting at index {idx} as deleted",
                     file=sys.stderr,
+                    flush=True,
                 )
                 return 1
 
             typ, _ = client.expunge()
             if typ != "OK":
-                print(f"EXPUNGE failed for batch starting at index {idx}", file=sys.stderr)
+                print(
+                    f"EXPUNGE failed for trash batch starting at index {idx}",
+                    file=sys.stderr,
+                    flush=True,
+                )
                 return 1
 
-            deleted += len(batch)
-            print(f"Deleted {deleted}/{total}")
+            purged += len(batch)
+            print(f"PurgedFromTrash {purged}/{trash_total}", flush=True)
 
         return 0
     finally:
