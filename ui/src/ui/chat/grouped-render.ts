@@ -240,7 +240,11 @@ function renderGroupedMessage(
     opts.showReasoning && role === "assistant" ? extractThinkingCached(message) : null;
   const markdownBase = extractedText?.trim() ? extractedText : null;
   const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
-  const markdown = markdownBase;
+  // Tool results can include very large text blobs (often JSON) that are already accessible via
+  // the tool card sidebar. Rendering that text as a normal chat bubble is noisy and duplicates
+  // what the tool UI already provides.
+  const suppressToolText = isToolResult && hasToolCards;
+  const markdown = suppressToolText ? null : markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
 
   const bubbleClasses = [
@@ -253,7 +257,10 @@ function renderGroupedMessage(
     .join(" ");
 
   if (!markdown && hasToolCards && isToolResult) {
-    return html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`;
+    return html`
+      ${renderMessageImages(images)}
+      ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
+    `;
   }
 
   if (!markdown && !hasToolCards && !hasImages) {

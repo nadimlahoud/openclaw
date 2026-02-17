@@ -36,13 +36,18 @@ export function extractToolCards(message: unknown): ToolCard[] {
     cards.push({ kind: "result", name, text });
   }
 
-  if (isToolResultMessage(message) && !cards.some((card) => card.kind === "result")) {
+  const hasToolId = typeof m.toolCallId === "string" || typeof m.tool_call_id === "string";
+  const hasToolName = typeof m.toolName === "string" || typeof m.tool_name === "string";
+  const isToolLike = isToolResultMessage(message) || hasToolId || hasToolName;
+  if (isToolLike && !cards.some((card) => card.kind === "result")) {
     const name =
       (typeof m.toolName === "string" && m.toolName) ||
       (typeof m.tool_name === "string" && m.tool_name) ||
       "tool";
     const text = extractTextCached(message) ?? undefined;
-    cards.push({ kind: "result", name, text });
+    if (text?.trim()) {
+      cards.push({ kind: "result", name, text });
+    }
   }
 
   return cards;

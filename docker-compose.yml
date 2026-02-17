@@ -3,11 +3,21 @@ services:
     image: bbernhard/signal-cli-rest-api:latest
     container_name: signal-cli
     restart: unless-stopped
+    entrypoint: ["signal-cli"]
+    command:
+      [
+        "--config",
+        "/home/.local/share/signal-cli",
+        "daemon",
+        "--http",
+        "0.0.0.0:8080",
+        "--no-receive-stdout",
+      ]
     volumes:
       - openclaw_signal_cli_data:/home/.local/share/signal-cli
     # Optional but useful for debugging from the Mac host:
     ports:
-      - "18080:8080"
+      - "18081:8080"
 
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
