@@ -79,8 +79,16 @@ function buildTimeSection(params: { userTimezone?: string }) {
   return ["## Current Date & Time", `Time zone: ${params.userTimezone}`, ""];
 }
 
-function buildReplyTagsSection(isMinimal: boolean) {
-  if (isMinimal) {
+const REPLY_TAG_CHANNELS = new Set(["telegram", "discord", "slack", "googlechat"]);
+
+function buildReplyTagsSection(params: { isMinimal: boolean; runtimeChannel?: string }) {
+  if (params.isMinimal) {
+    return [];
+  }
+  const runtimeChannel = params.runtimeChannel?.trim().toLowerCase();
+  // Only include Reply Tags guidance on surfaces where we actually support threaded replies.
+  // If channel is unknown/missing, omit to avoid leaking tags into user-visible transcripts.
+  if (!runtimeChannel || !REPLY_TAG_CHANNELS.has(runtimeChannel)) {
     return [];
   }
   return [
@@ -525,7 +533,7 @@ export function buildAgentSystemPrompt(params: {
     "## Workspace Files (injected)",
     "These user-editable files are loaded by OpenClaw and included below in Project Context.",
     "",
-    ...buildReplyTagsSection(isMinimal),
+    ...buildReplyTagsSection({ isMinimal, runtimeChannel }),
     ...buildMessagingSection({
       isMinimal,
       availableTools,

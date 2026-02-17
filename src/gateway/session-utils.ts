@@ -729,7 +729,10 @@ export function listSessionsFromStore(params: {
       const totalTokensFresh =
         typeof entry?.totalTokens === "number" ? entry?.totalTokensFresh !== false : false;
       const parsed = parseGroupKey(key);
-      const channel = entry?.channel ?? parsed?.channel;
+      const kind = classifySessionKey(key, entry);
+      // Session store may contain legacy/stale `channel` metadata. Only treat a session as
+      // channel/group-derived when the key or chatType indicates a group session.
+      const channel = kind === "group" ? (parsed?.channel ?? entry?.channel) : undefined;
       const subject = entry?.subject;
       const groupChannel = entry?.groupChannel;
       const space = entry?.space;
@@ -738,7 +741,7 @@ export function listSessionsFromStore(params: {
       const originLabel = origin?.label;
       const displayName =
         entry?.displayName ??
-        (channel
+        (kind === "group" && channel
           ? buildGroupDisplayName({
               provider: channel,
               subject,
@@ -759,7 +762,7 @@ export function listSessionsFromStore(params: {
       return {
         key,
         entry,
-        kind: classifySessionKey(key, entry),
+        kind,
         label: entry?.label,
         displayName,
         channel,

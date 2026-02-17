@@ -1,0 +1,19 @@
+{
+  "name": "@openclaw/domain-search",
+  "version": "2026.2.15",
+  "private": true,
+  "description": "OpenClaw domain search tool plugin (domain-search-mcp)",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48",
+    "domain-search-mcp": "1.10.1"
+  },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

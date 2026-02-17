@@ -58,6 +58,9 @@ ENV PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY ui/package.json ./ui/package.json
+# Include workspace packages before install so pnpm installs their runtime deps.
+COPY packages ./packages
+COPY extensions ./extensions
 COPY patches ./patches
 COPY scripts ./scripts
 

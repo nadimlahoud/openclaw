@@ -1,6 +1,21 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { Type } from "@sinclair/typebox";
-import { jsonResult } from "openclaw/plugin-sdk";
+import { execFile } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+
+type ToolResult = {
+  content: Array<{ type: "text"; text: string }>;
+  details: unknown;
+};
+
+function jsonResult(payload: unknown): ToolResult {
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+    details: payload,
+  };
+}
 
 type MsgvaultPluginConfig = {
   baseUrl?: string;
@@ -25,6 +40,19 @@ const MAX_TIMEOUT_MS = 120_000;
 const MAX_REQUEST_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 200;
 const MAX_RETRY_DELAY_MS = 2_000;
+const MAX_EXEC_BUFFER_BYTES = 16 * 1024 * 1024;
+const SEARCH_FALLBACK_ERROR_FRAGMENT = "search failed";
+const MESSAGE_FALLBACK_ERROR_FRAGMENT = "failed to retrieve message";
+
+const execFileAsync = promisify(execFile);
+
+type ResolvedConfig = {
+  baseUrl: string;
+  apiKeyEnv: string;
+  timeoutMs: number;
+  allowSync: boolean;
+  defaultAccount?: string;
+};
 
 function clampTimeoutMs(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -187,13 +215,7 @@ function getApiKey(config: { apiKeyEnv: string }): string | undefined {
   return undefined;
 }
 
-function resolveConfig(raw: unknown): {
-  baseUrl: string;
-  apiKeyEnv: string;
-  timeoutMs: number;
-  allowSync: boolean;
-  defaultAccount?: string;
-} {
+function resolveConfig(raw: unknown): ResolvedConfig {
   const cfg =
     raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as MsgvaultPluginConfig) : {};
   const apiKeyEnv =
@@ -210,12 +232,96 @@ function resolveConfig(raw: unknown): {
   };
 }
 
+function shouldFallbackToCli(err: unknown, fragment: string): boolean {
+  return err instanceof Error && err.message.toLowerCase().includes(fragment);
+}
+
+function resolveMsgvaultCliHome(): string {
+  const fromEnv = process.env.MSGVAULT_HOME?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  const homeDir = process.env.HOME?.trim() || os.homedir();
+  return path.join(homeDir, ".msgvault");
+}
+
+function resolveMsgvaultCliBins(): string[] {
+  const bins: string[] = [];
+  const fromEnv = process.env.MSGVAULT_BIN?.trim();
+  if (fromEnv) {
+    bins.push(fromEnv);
+  }
+  const homeDir = process.env.HOME?.trim() || os.homedir();
+  bins.push(path.join(homeDir, ".local", "bin", "msgvault"));
+  bins.push("msgvault");
+  return Array.from(new Set(bins));
+}
+
+function extractJsonFromCliOutput(output: string): unknown {
+  const trimmed = output.trim();
+  if (!trimmed) {
+    throw new Error("msgvault CLI returned empty output.");
+  }
+  const firstObject = trimmed.indexOf("{");
+  const firstArray = trimmed.indexOf("[");
+  const start =
+    firstObject < 0 ? firstArray : firstArray < 0 ? firstObject : Math.min(firstObject, firstArray);
+  if (start < 0) {
+    throw new Error("msgvault CLI output did not contain JSON.");
+  }
+  const lastObject = trimmed.lastIndexOf("}");
+  const lastArray = trimmed.lastIndexOf("]");
+  const end = Math.max(lastObject, lastArray);
+  if (end < start) {
+    throw new Error("msgvault CLI output did not contain complete JSON.");
+  }
+  const jsonText = trimmed.slice(start, end + 1);
+  try {
+    return JSON.parse(jsonText);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`msgvault CLI returned invalid JSON: ${msg}`);
+  }
+}
+
+async function runMsgvaultCliJson(cfg: Pick<ResolvedConfig, "timeoutMs">, args: string[]) {
+  const bins = resolveMsgvaultCliBins();
+  const fullArgs = ["--home", resolveMsgvaultCliHome(), ...args];
+  for (const bin of bins) {
+    try {
+      const { stdout = "", stderr = "" } = await execFileAsync(bin, fullArgs, {
+        timeout: cfg.timeoutMs,
+        maxBuffer: MAX_EXEC_BUFFER_BYTES,
+      });
+      return extractJsonFromCliOutput(`${stdout}\n${stderr}`);
+    } catch (err) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: unknown }).code ?? "")
+          : "";
+      if (code === "ENOENT") {
+        continue;
+      }
+      const stdout =
+        err && typeof err === "object" && "stdout" in err
+          ? String((err as { stdout?: unknown }).stdout ?? "")
+          : "";
+      const stderr =
+        err && typeof err === "object" && "stderr" in err
+          ? String((err as { stderr?: unknown }).stderr ?? "")
+          : "";
+      const detail =
+        stderr.trim() || stdout.trim() || (err instanceof Error ? err.message : String(err));
+      throw new Error(`msgvault CLI failed (${bin} ${fullArgs.join(" ")}): ${detail}`);
+    }
+  }
+  throw new Error(
+    "msgvault CLI binary not found. Set MSGVAULT_BIN or install msgvault at ~/.local/bin/msgvault.",
+  );
+}
+
 async function requestJson(
-  cfg: {
-    baseUrl: string;
-    apiKeyEnv: string;
-    timeoutMs: number;
-  },
+  cfg: Pick<ResolvedConfig, "baseUrl" | "apiKeyEnv" | "timeoutMs">,
   path: string,
   opts: RequestOptions = {},
 ): Promise<unknown> {
@@ -321,20 +427,52 @@ const msgvaultPlugin = {
         const page = normalizePositiveInt(params.page, 1, 100_000);
         const pageSize = normalizePositiveInt(params.page_size, 20, 100);
         const account = normalizeAccount(params.account) ?? cfg.defaultAccount;
-
-        const payload = await requestJson(cfg, "/api/v1/search", {
-          query: {
-            q: query,
+        let payload: unknown;
+        let transport: "api" | "cli" = "api";
+        try {
+          payload = await requestJson(cfg, "/api/v1/search", {
+            query: {
+              q: query,
+              page,
+              page_size: pageSize,
+              ...(account ? { account } : {}),
+            },
+          });
+        } catch (err) {
+          if (!shouldFallbackToCli(err, SEARCH_FALLBACK_ERROR_FRAGMENT)) {
+            throw err;
+          }
+          const offset = (page - 1) * pageSize;
+          const cliPayload = await runMsgvaultCliJson(cfg, [
+            "search",
+            query,
+            "--json",
+            "--limit",
+            String(pageSize),
+            "--offset",
+            String(offset),
+          ]);
+          if (!Array.isArray(cliPayload)) {
+            throw new Error("msgvault CLI search returned unexpected output.");
+          }
+          payload = {
+            query,
             page,
             page_size: pageSize,
-            ...(account ? { account } : {}),
-          },
-        });
+            total: cliPayload.length,
+            messages: cliPayload,
+          };
+          transport = "cli";
+        }
         return jsonResult({
           ...(payload as Record<string, unknown>),
           _meta: {
             source: "msgvault_search",
+            transport,
             ...(account ? { account } : {}),
+            ...(transport === "cli" && account
+              ? { account_filter_note: "API fallback cannot enforce account filter in CLI mode." }
+              : {}),
           },
         });
       },
@@ -352,8 +490,24 @@ const msgvaultPlugin = {
         if (!Number.isInteger(id) || id < 1) {
           throw new Error("id must be a positive integer");
         }
-        const payload = await requestJson(cfg, `/api/v1/messages/${id}`);
-        return jsonResult(payload);
+        let payload: unknown;
+        let transport: "api" | "cli" = "api";
+        try {
+          payload = await requestJson(cfg, `/api/v1/messages/${id}`);
+        } catch (err) {
+          if (!shouldFallbackToCli(err, MESSAGE_FALLBACK_ERROR_FRAGMENT)) {
+            throw err;
+          }
+          payload = await runMsgvaultCliJson(cfg, ["show-message", String(id), "--json"]);
+          transport = "cli";
+        }
+        return jsonResult({
+          ...(payload as Record<string, unknown>),
+          _meta: {
+            source: "msgvault_get_message",
+            transport,
+          },
+        });
       },
     });
 

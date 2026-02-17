@@ -214,7 +214,9 @@ function parseBinProbePayload(payloadJSON: string | null | undefined, payload?: 
     // system.which returns an object map of bin -> resolvedPath.
     // For eligibility we only need to know which bin names are present.
     if (parsed.bins && typeof parsed.bins === "object") {
-      return Object.keys(parsed.bins).map((bin) => bin.trim()).filter(Boolean);
+      return Object.keys(parsed.bins)
+        .map((bin) => bin.trim())
+        .filter(Boolean);
     }
     if (typeof parsed.stdout === "string") {
       return parsed.stdout

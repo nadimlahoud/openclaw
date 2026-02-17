@@ -256,3 +256,8 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/talk-voice/**"
+"extensions: domain-search":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/domain-search/**"
+          - "docs/tools/domain-search.md"

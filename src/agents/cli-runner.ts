@@ -12,6 +12,7 @@ import { makeBootstrapWarn, resolveBootstrapContextForRun } from "./bootstrap-fi
 import { resolveCliBackendConfig } from "./cli-backends.js";
 import {
   appendImagePathsToPrompt,
+  buildCliExtraSystemPrompt,
   buildCliArgs,
   buildSystemPrompt,
   cleanupResumeProcesses,
@@ -78,12 +79,10 @@ export async function runCliAgent(params: {
   const normalizedModel = normalizeCliModel(modelId, backend);
   const modelDisplay = `${params.provider}/${modelId}`;
 
-  const extraSystemPrompt = [
-    params.extraSystemPrompt?.trim(),
-    "Tools are disabled in this session. Do not call tools.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const extraSystemPrompt = buildCliExtraSystemPrompt({
+    extraSystemPrompt: params.extraSystemPrompt,
+    nativeTools: backend.nativeTools,
+  });
 
   const sessionLabel = params.sessionKey ?? params.sessionId;
   const { contextFiles } = await resolveBootstrapContextForRun({

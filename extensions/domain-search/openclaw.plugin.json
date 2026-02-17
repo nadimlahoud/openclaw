@@ -1,0 +1,33 @@
+{
+  "id": "domain-search",
+  "name": "Domain Search",
+  "description": "Domain availability, bulk checks, TLD info, socials, and offline-first suggestions via domain-search-mcp.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "qwenMode": {
+        "type": "string",
+        "enum": ["disabled", "public", "custom"],
+        "description": "AI inference mode for suggest_domains_smart. Default: disabled."
+      },
+      "qwenEndpoint": {
+        "type": "string",
+        "description": "When qwenMode=custom, the inference endpoint URL."
+      },
+      "qwenApiKey": { "type": "string" },
+      "pricingApiBaseUrl": {
+        "type": "string",
+        "description": "Optional pricing backend (must be public HTTPS; domain-search-mcp blocks localhost/private ranges)."
+      },
+      "pricingApiToken": { "type": "string" },
+      "porkbunApiKey": { "type": "string" },
+      "porkbunApiSecret": { "type": "string" },
+      "namecheapApiKey": { "type": "string" },
+      "namecheapApiUser": { "type": "string" },
+      "namecheapClientIp": { "type": "string" },
+      "redisUrl": { "type": "string" },
+      "logLevel": { "type": "string" }
+    }
+  }
+}

@@ -18,6 +18,7 @@ This document gives you five practical automations you can copy into OpenClaw an
 4. Start with a narrow scope, then expand sources/channels after the output quality is stable.
 
 Placeholder conventions used below:
+
 - `<TZ>`: your timezone (example: `America/New_York`)
 - `<WINDOW>`: time window (example: `24h`, `7d`)
 - `<CHANNELS>`: sources to check (example: `email,slack,telegram`)
@@ -36,11 +37,13 @@ Weekdays at 08:00 local time.
 Build my daily command brief for today in <TZ>.
 
 Sources to review:
+
 - Calendar events in the next 12 hours
 - Unread/important items from <CHANNELS> in the last 18 hours
 - Any existing tasks/todos due today
 
 Output format:
+
 1. Top 3 priorities (ranked)
 2. Time-block plan (morning / afternoon / evening)
 3. Urgent messages needing reply (max 5)
@@ -48,6 +51,7 @@ Output format:
 5. A 5-line action checklist I can execute immediately
 
 Rules:
+
 - Be specific, not motivational.
 - If data is missing from a source, state it and continue.
 - Keep total output under 220 words.
@@ -73,19 +77,23 @@ Every weekday at 14:30 local time.
 Run a follow-up radar scan over the last <WINDOW>.
 
 Scope:
+
 - Threads where I sent the last message and got no reply for 48+ hours
 - High-signal conversations only (sales, hiring, partnerships, active projects)
 
 For each candidate thread:
+
 1. Explain why it matters in one sentence.
 2. Draft a follow-up message with clear intent and next step.
 3. Label urgency: high / medium / low.
 
 Output:
+
 - Table with columns: Contact, Topic, Last Activity, Urgency, Draft Follow-up.
 - Max 10 rows, sorted by urgency then recency.
 
 Rules:
+
 - No guilt language.
 - Keep each draft under 90 words.
 - If context is weak, ask one clarifying question instead of guessing.
@@ -111,11 +119,13 @@ Every evening at 18:00 local time.
 Extract actions from today’s meetings and notes.
 
 Inputs:
+
 - Calendar events from today
 - Notes/transcripts captured today
 - Related messages in the last 12 hours
 
 Produce:
+
 1. Decision log (what was decided)
 2. Action items with fields:
    - owner
@@ -127,6 +137,7 @@ Produce:
 4. One summary paragraph for end-of-day review
 
 Rules:
+
 - Do not create actions without evidence.
 - Mark assumptions explicitly.
 - If owner is unclear, use "unassigned" and include a clarification question.
@@ -152,11 +163,13 @@ Weekly on Friday at 16:00 local time.
 Create a weekly project health digest for the last 7 days.
 
 Collect:
+
 - Activity from project channels/repos/docs
 - Open blockers and unresolved dependencies
 - Missed or at-risk milestones
 
 Output sections:
+
 1. Project scorecard (On track / At risk / Off track)
 2. Top 5 blockers (owner + unblock step)
 3. Decisions needed next week (with recommended decision)
@@ -164,6 +177,7 @@ Output sections:
 5. Executive summary (max 120 words)
 
 Rules:
+
 - Prefer facts and timestamps over narrative.
 - Include links/refs where possible.
 - Flag missing telemetry explicitly.
@@ -189,6 +203,7 @@ Every 4 hours.
 Run an OpenClaw reliability and security check.
 
 Verify:
+
 - Gateway health endpoint is reachable
 - Auth is enforced (unauthenticated requests should fail)
 - Current bind/exposure is expected (localhost-only unless explicitly configured)
@@ -196,12 +211,14 @@ Verify:
 - Disk space and workspace/state accessibility
 
 Output:
+
 1. Status: OK / Warning / Critical
 2. Findings with severity and evidence
 3. Immediate fixes (ordered)
 4. One-line rollback recommendation if critical
 
 Rules:
+
 - No vague alerts; include concrete evidence.
 - Suppress noisy repeats if same finding occurred in the last 24h.
 ```
@@ -217,4 +234,3 @@ It catches auth, exposure, and runtime regressions before they become outages.
 - **Token/auth:** keep gateway authentication enabled; never hardcode tokens in prompts or commit them to files.
 - **Channel prerequisites:** automations should degrade gracefully when a channel/tool is unavailable; report missing capability and continue.
 - **Local vs hosted:** macOS-only capabilities (for example Apple-specific local integrations) require a Mac runtime. VPS deployments should use channels, APIs, or nodes/bridges for equivalent workflows.
-

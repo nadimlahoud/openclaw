@@ -50,6 +50,17 @@ type TranscriptAppendResult = {
 
 type AppendMessageArg = Parameters<SessionManager["appendMessage"]>[0];
 
+const REPLY_TAG_RE = /\[\[\s*(?:reply_to_current|reply_to\s*:\s*[^\]\n]+)\s*\]\]/gi;
+
+function stripReplyTagsFromText(text: string): string {
+  if (!text || !text.includes("[[")) {
+    return text;
+  }
+  // Strip reply-threading tags like [[reply_to_current]] from WebChat-visible text.
+  // Keep the rest of the message intact (no global whitespace normalization).
+  return text.replace(REPLY_TAG_RE, "").trim();
+}
+
 function stripDisallowedChatControlChars(message: string): string {
   let output = "";
   for (const char of message) {
@@ -535,7 +546,8 @@ export const chatHandlers: GatewayRequestHandlers = {
           if (info.kind !== "final") {
             return;
           }
-          const text = payload.text?.trim() ?? "";
+          const rawText = payload.text?.trim() ?? "";
+          const text = stripReplyTagsFromText(rawText);
           if (!text) {
             return;
           }

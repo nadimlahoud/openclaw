@@ -252,6 +252,23 @@ export type CliOutput = {
   usage?: CliUsage;
 };
 
+const CLI_TOOLS_DISABLED_LINE = "Tools are disabled in this session. Do not call tools.";
+const CLI_NATIVE_TOOLS_ALLOWED_LINE =
+  "Native CLI tools (including MCP servers) are allowed in this session.";
+
+export function buildCliExtraSystemPrompt(params: {
+  extraSystemPrompt?: string;
+  nativeTools?: boolean;
+}): string {
+  const lines: Array<string | undefined> = [params.extraSystemPrompt?.trim()];
+  if (params.nativeTools === true) {
+    lines.push(CLI_NATIVE_TOOLS_ALLOWED_LINE);
+  } else {
+    lines.push(CLI_TOOLS_DISABLED_LINE);
+  }
+  return lines.filter(Boolean).join("\n");
+}
+
 export function buildSystemPrompt(params: {
   workspaceDir: string;
   config?: OpenClawConfig;

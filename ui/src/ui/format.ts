@@ -4,6 +4,8 @@ import { stripReasoningTagsFromText } from "../../../src/shared/text/reasoning-t
 
 export { formatRelativeTimestamp, formatDurationHuman };
 
+const REPLY_TAG_RE = /\[\[\s*(?:reply_to_current|reply_to\s*:\s*[^\]\n]+)\s*\]\]/gi;
+
 export function formatMs(ms?: number | null): string {
   if (!ms && ms !== 0) {
     return "n/a";
@@ -57,4 +59,11 @@ export function parseList(input: string): string[] {
 
 export function stripThinkingTags(value: string): string {
   return stripReasoningTagsFromText(value, { mode: "preserve", trim: "start" });
+}
+
+export function stripReplyTags(value: string): string {
+  if (!value || !value.includes("[[")) {
+    return value;
+  }
+  return value.replace(REPLY_TAG_RE, "").trim();
 }

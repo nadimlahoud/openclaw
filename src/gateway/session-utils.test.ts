@@ -422,6 +422,29 @@ describe("listSessionsFromStore search", () => {
     expect(result.sessions[0].key).toBe("agent:main:discord:group:dev-team");
   });
 
+  test("does not derive a group display name for direct sessions with stale channel metadata", () => {
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": {
+        sessionId: "sess-main",
+        updatedAt: Date.now(),
+        chatType: "direct",
+        channel: "whatsapp",
+      } as SessionEntry,
+    };
+
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+
+    expect(result.sessions.length).toBe(1);
+    expect(result.sessions[0].kind).toBe("direct");
+    expect(result.sessions[0].channel).toBeUndefined();
+    expect(result.sessions[0].displayName).toBeUndefined();
+  });
+
   test("returns empty array when no matches", () => {
     const store = makeStore();
     const result = listSessionsFromStore({

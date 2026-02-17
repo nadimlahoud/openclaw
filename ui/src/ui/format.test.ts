@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRelativeTimestamp, stripThinkingTags } from "./format.ts";
+import { formatRelativeTimestamp, stripReplyTags, stripThinkingTags } from "./format.ts";
 
 describe("formatAgo", () => {
   it("returns 'in <1m' for timestamps less than 60s in the future", () => {
@@ -67,5 +67,24 @@ describe("stripThinkingTags", () => {
     // This should not crash and should handle gracefully
     expect(stripThinkingTags("<final\nHello")).toBe("<final\nHello");
     expect(stripThinkingTags("Hello</final>")).toBe("Hello");
+  });
+});
+
+describe("stripReplyTags", () => {
+  it("strips [[reply_to_current]] tag", () => {
+    expect(stripReplyTags("[[reply_to_current]] Hello")).toBe("Hello");
+  });
+
+  it("strips [[reply_to:...]] tag", () => {
+    expect(stripReplyTags("See this [[reply_to:12345]] now")).toBe("See this  now");
+  });
+
+  it("handles whitespace inside tags", () => {
+    expect(stripReplyTags("[[ reply_to_current ]] Hello")).toBe("Hello");
+    expect(stripReplyTags("ok [[ reply_to : 12345 ]] now")).toBe("ok  now");
+  });
+
+  it("returns original text when no tags exist", () => {
+    expect(stripReplyTags("Hello")).toBe("Hello");
   });
 });

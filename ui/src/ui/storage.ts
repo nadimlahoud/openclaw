@@ -28,7 +28,8 @@ export function loadSettings(): UiSettings {
     lastActiveSessionKey: "main",
     theme: "system",
     chatFocusMode: false,
-    chatShowThinking: true,
+    // Default off: most users want clean chat transcripts. Tool stream/thinking can be toggled on.
+    chatShowThinking: false,
     splitRatio: 0.6,
     navCollapsed: false,
     navGroupsCollapsed: {},

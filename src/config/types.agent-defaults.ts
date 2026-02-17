@@ -91,6 +91,11 @@ export type CliBackendConfig = {
   imageMode?: "repeat" | "list";
   /** Serialize runs for this CLI. */
   serialize?: boolean;
+  /**
+   * If true, do not inject OpenClaw's "tools disabled" prompt. This allows the CLI's native tools
+   * (including MCP servers) to run. Note: OpenClaw tool policy does not apply to CLI-native tools.
+   */
+  nativeTools?: boolean;
 };
 
 export type AgentDefaultsConfig = {

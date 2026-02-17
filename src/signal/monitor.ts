@@ -16,6 +16,15 @@ import { createSignalEventHandler } from "./monitor/event-handler.js";
 import { sendMessageSignal } from "./send.js";
 import { runSignalSseLoop } from "./sse-reconnect.js";
 
+const REPLY_TAG_RE = /\[\[\s*(?:reply_to_current|reply_to\s*:\s*[^\]\n]+)\s*\]\]/gi;
+
+function stripReplyTagsFromText(text: string): string {
+  if (!text || !text.includes("[[")) {
+    return text;
+  }
+  return text.replace(REPLY_TAG_RE, "").trim();
+}
+
 type SignalReactionMessage = {
   emoji?: string | null;
   targetAuthor?: string | null;
@@ -233,7 +242,7 @@ async function deliverReplies(params: {
     params;
   for (const payload of replies) {
     const mediaList = payload.mediaUrls ?? (payload.mediaUrl ? [payload.mediaUrl] : []);
-    const text = payload.text ?? "";
+    const text = stripReplyTagsFromText(payload.text ?? "");
     if (!text && mediaList.length === 0) {
       continue;
     }
