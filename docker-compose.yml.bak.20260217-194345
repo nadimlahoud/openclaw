@@ -1,18 +1,6 @@
 services:
-  signal-cli:
-    image: bbernhard/signal-cli-rest-api:latest
-    container_name: signal-cli
-    restart: unless-stopped
-    volumes:
-      - openclaw_signal_cli_data:/home/.local/share/signal-cli
-    # Optional but useful for debugging from the Mac host:
-    ports:
-      - "18080:8080"
-
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
-    depends_on:
-      - signal-cli
     environment:
       HOME: /home/node
       TERM: xterm-256color
@@ -64,4 +52,3 @@ volumes:
   openclaw_workspace:
     external: true
     name: openclaw_workspace
-  openclaw_signal_cli_data:
