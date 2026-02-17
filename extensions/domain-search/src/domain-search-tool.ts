@@ -230,6 +230,224 @@ function applyDomainSearchEnv(config: DomainSearchPluginConfig) {
   setIfNonEmpty("LOG_LEVEL", config.logLevel);
 }
 
+function unwrapCjsModule(imported: unknown): Record<string, unknown> | null {
+  if (!imported || typeof imported !== "object") {
+    return null;
+  }
+  if ("default" in imported) {
+    const def = (imported as { default: unknown }).default;
+    if (def && typeof def === "object") {
+      return def as Record<string, unknown>;
+    }
+  }
+  return imported as Record<string, unknown>;
+}
+
+function parseMoney(value: unknown): number | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+type PorkbunCheckDomainPayload = {
+  status: "SUCCESS" | "ERROR";
+  message?: string;
+  response?: {
+    avail?: string;
+    premium?: string;
+    price?: string;
+    regularPrice?: string;
+    additional?: {
+      renewal?: { price?: string; regularPrice?: string };
+      transfer?: { price?: string; regularPrice?: string };
+    };
+  };
+};
+
+function parsePorkbunCheckDomainResponse(payload: unknown): {
+  available: boolean;
+  premium: boolean;
+  priceFirstYear: number | null;
+  priceRenewal: number | null;
+  priceTransfer: number | null;
+  retailPrice: number | null;
+} {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid Porkbun checkDomain response: expected object");
+  }
+  const record = payload as PorkbunCheckDomainPayload;
+  if (record.status !== "SUCCESS") {
+    throw new Error(record.message || "Porkbun checkDomain failed");
+  }
+  const response = record.response;
+  if (!response || typeof response !== "object") {
+    throw new Error("Invalid Porkbun checkDomain response: missing response");
+  }
+  const availRaw = typeof response.avail === "string" ? response.avail.toLowerCase() : "";
+  const premiumRaw = typeof response.premium === "string" ? response.premium.toLowerCase() : "";
+  const available = availRaw === "yes";
+  const premium = premiumRaw === "yes";
+  const priceFirstYear = parseMoney(response.price);
+  const retailPrice = parseMoney(response.regularPrice);
+  const renewal = parseMoney(response.additional?.renewal?.price);
+  const transfer = parseMoney(response.additional?.transfer?.price);
+
+  return {
+    available,
+    premium,
+    priceFirstYear,
+    priceRenewal: renewal,
+    priceTransfer: transfer,
+    retailPrice,
+  };
+}
+
+async function patchDomainSearchMcpPorkbun(): Promise<void> {
+  // domain-search-mcp 1.10.1 uses the legacy Porkbun endpoint `/domain/check` which currently returns 404.
+  // Porkbun's v3 API now exposes domain availability + pricing via:
+  //   POST /domain/checkDomain/<fqdn> with JSON body { apikey, secretapikey }.
+  //
+  // Patch at runtime to keep OpenClaw's `domain_search` tool functional without vendoring/patching deps.
+  try {
+    const imported = await import("domain-search-mcp/dist/registrars/index.js");
+    const mod = unwrapCjsModule(imported);
+    if (!mod) {
+      return;
+    }
+
+    const adapter = mod.porkbunAdapter;
+    if (!adapter || typeof adapter !== "object") {
+      return;
+    }
+
+    const marker = "__openclaw_patched_checkdomain";
+    if (marker in adapter) {
+      return;
+    }
+    Object.defineProperty(adapter, marker, { value: true });
+
+    const loggerImported = await import("domain-search-mcp/dist/utils/logger.js");
+    const loggerMod = unwrapCjsModule(loggerImported) ?? {};
+    // oxlint-disable-next-line typescript/no-explicit-any
+    const logger = (loggerMod as any).logger ?? console;
+
+    const errorsImported = await import("domain-search-mcp/dist/utils/errors.js");
+    const errorsMod = unwrapCjsModule(errorsImported) ?? {};
+    // oxlint-disable-next-line typescript/no-explicit-any
+    const AuthenticationError = (errorsMod as any).AuthenticationError as
+      | (new (registrar: string, reason?: string) => Error)
+      | undefined;
+
+    // oxlint-disable-next-line typescript/no-explicit-any
+    const porkbunAdapter = adapter as any;
+
+    // Reduce flakiness for large responses (pricing/get) by increasing default request timeout.
+    const timeoutMs = 30_000;
+    if (typeof porkbunAdapter.timeoutMs === "number") {
+      porkbunAdapter.timeoutMs = timeoutMs;
+    }
+    if (porkbunAdapter.client?.defaults) {
+      porkbunAdapter.client.defaults.timeout = timeoutMs;
+    }
+
+    logger.debug("OpenClaw patched domain-search-mcp Porkbun adapter", {
+      check_endpoint: "/domain/checkDomain/<fqdn>",
+      timeout_ms: timeoutMs,
+    });
+
+    const originalGetPricing =
+      typeof porkbunAdapter.getPricing === "function"
+        ? porkbunAdapter.getPricing.bind(porkbunAdapter)
+        : null;
+
+    porkbunAdapter.checkAvailability = async function checkAvailability(
+      domain: string,
+      tld: string,
+    ) {
+      const fqdn = `${domain}.${tld}`;
+      const result = await this.retryWithBackoff(async () => {
+        const path = `/domain/checkDomain/${encodeURIComponent(fqdn)}`;
+        const baseURL =
+          typeof this.client?.defaults?.baseURL === "string"
+            ? this.client.defaults.baseURL
+            : undefined;
+        logger.debug("Porkbun checkDomain", { method: "POST", base_url: baseURL, path });
+        const response = await this.client.post(path, {
+          apikey: this.apiKey,
+          secretapikey: this.apiSecret,
+        });
+        logger.debug("Porkbun checkDomain result", {
+          method: "POST",
+          base_url: baseURL,
+          path,
+          status: response?.status,
+        });
+        const parsed = parsePorkbunCheckDomainResponse(response.data);
+        return parsed;
+      }, `checkDomain ${fqdn}`);
+
+      return {
+        available: result.available,
+        premium: result.premium,
+        // Back-compat for existing adapter behavior.
+        price: result.priceFirstYear ?? undefined,
+        renewal: result.priceRenewal ?? undefined,
+        transfer: result.priceTransfer ?? undefined,
+        retailPrice: result.retailPrice ?? undefined,
+      };
+    };
+
+    porkbunAdapter.search = async function search(domain: string, tld: string) {
+      if (!this.isEnabled()) {
+        // domain-search-mcp expects an AuthenticationError here.
+        if (typeof AuthenticationError === "function") {
+          throw new AuthenticationError("porkbun", "API credentials not configured");
+        }
+        throw new Error("Porkbun API credentials not configured");
+      }
+
+      const fullDomain = `${domain}.${tld}`;
+      logger.debug("Porkbun search", { domain: fullDomain });
+
+      try {
+        const availability = await this.checkAvailability(domain, tld);
+
+        // Only fall back to `/pricing/get` if the per-domain check didn't return a field.
+        const pricing =
+          (availability?.renewal === undefined ||
+            availability?.transfer === undefined ||
+            availability?.price === undefined) &&
+          originalGetPricing
+            ? await originalGetPricing(tld)
+            : null;
+
+        return this.createResult(domain, tld, {
+          available: availability.available,
+          premium: availability.premium,
+          price_first_year: availability.price ?? (pricing ? pricing.registration : null) ?? null,
+          price_renewal: availability.renewal ?? (pricing ? pricing.renewal : null) ?? null,
+          transfer_price: availability.transfer ?? (pricing ? pricing.transfer : null) ?? null,
+          privacy_included: true, // Porkbun includes WHOIS privacy
+          source: "porkbun_api",
+          premium_reason: availability.premium ? "Premium domain" : undefined,
+        });
+      } catch (error) {
+        // Preserve domain-search-mcp's existing error mapping and retry semantics.
+        this.handleApiError(error, fullDomain);
+        throw error;
+      }
+    };
+  } catch {
+    // Best-effort: if domain-search-mcp changes its internals, keep OpenClaw loading.
+  }
+}
+
 function createDefaultLoader(config: DomainSearchPluginConfig): DomainSearchToolLoadImpl {
   let promise: Promise<DomainSearchImpl> | null = null;
 
@@ -241,7 +459,12 @@ function createDefaultLoader(config: DomainSearchPluginConfig): DomainSearchTool
         const imported = await import("domain-search-mcp/dist/tools/index.js");
         // domain-search-mcp is CJS; prefer the CJS export bag when present.
         // oxlint-disable-next-line typescript/no-explicit-any
-        const mod = ((imported as any).default ?? imported) as Record<string, unknown>;
+        const mod =
+          // oxlint-disable-next-line typescript/no-explicit-any
+          unwrapCjsModule(imported) ??
+          (((imported as any).default ?? imported) as Record<string, unknown>);
+
+        await patchDomainSearchMcpPorkbun();
 
         const pick = (key: keyof DomainSearchImpl) => {
           const fn = mod[key as string];
