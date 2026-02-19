@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>ai.openclaw.openclaw-calendar</string>
+  <key>CFBundleName</key>
+  <string>openclaw-calendar</string>
+  <key>CFBundleDisplayName</key>
+  <string>openclaw-calendar</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>OpenClaw needs access to your calendars to read events you ask about.</string>
+</dict>
+</plist>

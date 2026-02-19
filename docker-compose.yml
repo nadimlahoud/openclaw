@@ -15,6 +15,12 @@ services:
       ]
     volumes:
       - openclaw_signal_cli_data:/home/.local/share/signal-cli
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/v1/check >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     # Optional but useful for debugging from the Mac host:
     ports:
       - "18081:8080"
@@ -51,6 +57,7 @@ services:
 
   openclaw-cli:
     image: ${OPENCLAW_IMAGE:-openclaw:local}
+    profiles: ["cli"]
     environment:
       HOME: /home/node
       TERM: xterm-256color
