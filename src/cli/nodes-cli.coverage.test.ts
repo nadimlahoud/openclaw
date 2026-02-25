@@ -158,6 +158,22 @@ describe("nodes-cli coverage", () => {
     });
   });
 
+  it("formats approval request command from argv with proper quoting", async () => {
+    const program = new Command();
+    program.exitOverride();
+    registerNodesCli(program);
+
+    await program.parseAsync(
+      ["nodes", "run", "--agent", "main", "--node", "mac-1", "date", "+%Y-%m-%d %Z"],
+      { from: "user" },
+    );
+
+    const approvalReq = callGateway.mock.calls.find(
+      (call) => call[0]?.method === "exec.approval.request",
+    )?.[0];
+    expect(approvalReq?.params?.command).toBe('date "+%Y-%m-%d %Z"');
+  });
+
   it("invokes system.notify with provided fields", async () => {
     const program = new Command();
     program.exitOverride();

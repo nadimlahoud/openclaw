@@ -1,8 +1,4 @@
-import {
-  BedrockClient,
-  ListFoundationModelsCommand,
-  type ListFoundationModelsCommandOutput,
-} from "@aws-sdk/client-bedrock";
+import type { ListFoundationModelsCommandOutput } from "@aws-sdk/client-bedrock";
 import type { BedrockDiscoveryConfig, ModelDefinitionConfig } from "../config/types.js";
 
 const DEFAULT_REFRESH_INTERVAL_SECONDS = 3600;
@@ -17,6 +13,15 @@ const DEFAULT_COST = {
 
 type BedrockModelSummary = NonNullable<ListFoundationModelsCommandOutput["modelSummaries"]>[number];
 
+type BedrockClientLike = {
+  send(command: unknown): Promise<ListFoundationModelsCommandOutput>;
+};
+
+type BedrockSdkRuntime = {
+  BedrockClient: new (params: { region: string }) => BedrockClientLike;
+  ListFoundationModelsCommand: new (params: object) => unknown;
+};
+
 type BedrockDiscoveryCacheEntry = {
   expiresAt: number;
   value?: ModelDefinitionConfig[];
@@ -25,6 +30,21 @@ type BedrockDiscoveryCacheEntry = {
 
 const discoveryCache = new Map<string, BedrockDiscoveryCacheEntry>();
 let hasLoggedBedrockError = false;
+let bedrockSdkRuntimePromise: Promise<BedrockSdkRuntime> | null = null;
+
+async function loadBedrockSdkRuntime(): Promise<BedrockSdkRuntime> {
+  if (!bedrockSdkRuntimePromise) {
+    // Avoid eagerly loading AWS SDK modules during unrelated startup/test paths.
+    bedrockSdkRuntimePromise = import("@aws-sdk/client-bedrock").then(
+      ({ BedrockClient, ListFoundationModelsCommand }) => ({
+        BedrockClient: BedrockClient as BedrockSdkRuntime["BedrockClient"],
+        ListFoundationModelsCommand:
+          ListFoundationModelsCommand as BedrockSdkRuntime["ListFoundationModelsCommand"],
+      }),
+    );
+  }
+  return await bedrockSdkRuntimePromise;
+}
 
 function normalizeProviderFilter(filter?: string[]): string[] {
   if (!filter || filter.length === 0) {
@@ -146,7 +166,7 @@ export async function discoverBedrockModels(params: {
   region: string;
   config?: BedrockDiscoveryConfig;
   now?: () => number;
-  clientFactory?: (region: string) => BedrockClient;
+  clientFactory?: (region: string) => BedrockClientLike;
 }): Promise<ModelDefinitionConfig[]> {
   const refreshIntervalSeconds = Math.max(
     0,
@@ -174,6 +194,7 @@ export async function discoverBedrockModels(params: {
     }
   }
 
+  const { BedrockClient, ListFoundationModelsCommand } = await loadBedrockSdkRuntime();
   const clientFactory = params.clientFactory ?? ((region: string) => new BedrockClient({ region }));
   const client = clientFactory(params.region);
 

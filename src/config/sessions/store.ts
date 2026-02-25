@@ -34,6 +34,7 @@ type SessionStoreCacheEntry = {
 
 const SESSION_STORE_CACHE = new Map<string, SessionStoreCacheEntry>();
 const DEFAULT_SESSION_STORE_TTL_MS = 45_000; // 45 seconds (between 30-60s)
+const SYNTHETIC_SESSION_MARKERS = new Set(["heartbeat", "cron-event", "exec-event"]);
 
 function isSessionStoreRecord(value: unknown): value is Record<string, SessionEntry> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -60,31 +61,104 @@ function invalidateSessionStoreCache(storePath: string): void {
   SESSION_STORE_CACHE.delete(storePath);
 }
 
+function isSyntheticSessionMarker(value: unknown): boolean {
+  return typeof value === "string" && SYNTHETIC_SESSION_MARKERS.has(value.trim().toLowerCase());
+}
+
+function stripSyntheticOrigin(origin?: SessionEntry["origin"]): SessionEntry["origin"] {
+  if (!origin) {
+    return undefined;
+  }
+  const provider = typeof origin.provider === "string" ? origin.provider.trim().toLowerCase() : "";
+  if (!SYNTHETIC_SESSION_MARKERS.has(provider)) {
+    return origin;
+  }
+  const next = { ...origin };
+  delete next.provider;
+  if (isSyntheticSessionMarker(next.label)) {
+    delete next.label;
+  }
+  if (isSyntheticSessionMarker(next.surface)) {
+    delete next.surface;
+  }
+  if (isSyntheticSessionMarker(next.from)) {
+    delete next.from;
+  }
+  if (isSyntheticSessionMarker(next.to)) {
+    delete next.to;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function sameOrigin(
+  a: SessionEntry["origin"] | undefined,
+  b: SessionEntry["origin"] | undefined,
+): boolean {
+  if (!a && !b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  return (
+    a.label === b.label &&
+    a.provider === b.provider &&
+    a.surface === b.surface &&
+    a.chatType === b.chatType &&
+    a.from === b.from &&
+    a.to === b.to &&
+    a.accountId === b.accountId &&
+    a.threadId === b.threadId
+  );
+}
+
 function normalizeSessionEntryDelivery(entry: SessionEntry): SessionEntry {
+  const sanitizedChannel = isSyntheticSessionMarker(entry.channel) ? undefined : entry.channel;
+  const sanitizedLastChannel = isSyntheticSessionMarker(entry.lastChannel)
+    ? undefined
+    : entry.lastChannel;
+  const sanitizedLastTo = isSyntheticSessionMarker(entry.lastTo) ? undefined : entry.lastTo;
+  const sanitizedOrigin = stripSyntheticOrigin(entry.origin);
+  const sanitizedDeliveryContext = normalizeDeliveryContext({
+    channel: isSyntheticSessionMarker(entry.deliveryContext?.channel)
+      ? undefined
+      : entry.deliveryContext?.channel,
+    to: isSyntheticSessionMarker(entry.deliveryContext?.to) ? undefined : entry.deliveryContext?.to,
+    accountId: entry.deliveryContext?.accountId,
+    threadId: entry.deliveryContext?.threadId,
+  });
   const normalized = normalizeSessionDeliveryFields({
-    channel: entry.channel,
-    lastChannel: entry.lastChannel,
-    lastTo: entry.lastTo,
+    channel: sanitizedChannel,
+    lastChannel: sanitizedLastChannel,
+    lastTo: sanitizedLastTo,
     lastAccountId: entry.lastAccountId,
-    lastThreadId: entry.lastThreadId ?? entry.deliveryContext?.threadId ?? entry.origin?.threadId,
-    deliveryContext: entry.deliveryContext,
+    lastThreadId:
+      entry.lastThreadId ?? sanitizedDeliveryContext?.threadId ?? sanitizedOrigin?.threadId,
+    deliveryContext: sanitizedDeliveryContext,
   });
   const nextDelivery = normalized.deliveryContext;
   const sameDelivery =
-    (entry.deliveryContext?.channel ?? undefined) === nextDelivery?.channel &&
-    (entry.deliveryContext?.to ?? undefined) === nextDelivery?.to &&
-    (entry.deliveryContext?.accountId ?? undefined) === nextDelivery?.accountId &&
-    (entry.deliveryContext?.threadId ?? undefined) === nextDelivery?.threadId;
+    (sanitizedDeliveryContext?.channel ?? undefined) === nextDelivery?.channel &&
+    (sanitizedDeliveryContext?.to ?? undefined) === nextDelivery?.to &&
+    (sanitizedDeliveryContext?.accountId ?? undefined) === nextDelivery?.accountId &&
+    (sanitizedDeliveryContext?.threadId ?? undefined) === nextDelivery?.threadId;
   const sameLast =
-    entry.lastChannel === normalized.lastChannel &&
-    entry.lastTo === normalized.lastTo &&
+    sanitizedLastChannel === normalized.lastChannel &&
+    sanitizedLastTo === normalized.lastTo &&
     entry.lastAccountId === normalized.lastAccountId &&
     entry.lastThreadId === normalized.lastThreadId;
-  if (sameDelivery && sameLast) {
+  if (
+    sameDelivery &&
+    sameLast &&
+    entry.channel === sanitizedChannel &&
+    sameOrigin(entry.origin, sanitizedOrigin)
+  ) {
     return entry;
   }
   return {
     ...entry,
+    channel: sanitizedChannel,
+    origin: sanitizedOrigin,
     deliveryContext: nextDelivery,
     lastChannel: normalized.lastChannel,
     lastTo: normalized.lastTo,
@@ -198,6 +272,10 @@ export function loadSessionStore(
       delete rec.room;
     }
   }
+
+  // Sanitize legacy synthetic routing markers on read so stale stores cannot
+  // misroute the first real user turn before the next write.
+  normalizeSessionStore(store);
 
   // Cache the result if caching is enabled
   if (!opts.skipCache && isSessionStoreCacheEnabled()) {

@@ -32,6 +32,9 @@ export const DEFAULT_MEMORY_ALT_FILENAME = "memory.md";
 const WORKSPACE_STATE_DIRNAME = ".openclaw";
 const WORKSPACE_STATE_FILENAME = "workspace-state.json";
 const WORKSPACE_STATE_VERSION = 1;
+const WORKSPACE_GIT_AUTHOR_NAME = "OpenClaw Agent";
+const WORKSPACE_GIT_AUTHOR_EMAIL = "openclaw-agent@local";
+const GIT_CONFIG_TIMEOUT_MS = 2_000;
 
 const workspaceTemplateCache = new Map<string, Promise<string>>();
 let gitAvailabilityPromise: Promise<boolean> | null = null;
@@ -255,6 +258,56 @@ async function ensureGitRepo(dir: string, isBrandNewWorkspace: boolean) {
   }
 }
 
+async function readLocalGitConfig(
+  dir: string,
+  key: "user.name" | "user.email",
+): Promise<string | null> {
+  try {
+    const result = await runCommandWithTimeout(["git", "config", "--local", "--get", key], {
+      cwd: dir,
+      timeoutMs: GIT_CONFIG_TIMEOUT_MS,
+    });
+    if (result.code !== 0) {
+      return null;
+    }
+    const value = result.stdout.trim();
+    return value.length > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setLocalGitConfigIfMissing(
+  dir: string,
+  key: "user.name" | "user.email",
+  value: string,
+): Promise<void> {
+  const existing = await readLocalGitConfig(dir, key);
+  if (existing) {
+    return;
+  }
+  try {
+    await runCommandWithTimeout(["git", "config", "--local", key, value], {
+      cwd: dir,
+      timeoutMs: GIT_CONFIG_TIMEOUT_MS,
+    });
+  } catch {
+    // Ignore git config failures; workspace creation should still succeed.
+  }
+}
+
+async function ensureWorkspaceGitAuthorConfig(dir: string): Promise<void> {
+  if (!(await hasGitRepo(dir))) {
+    return;
+  }
+  if (!(await isGitAvailable())) {
+    return;
+  }
+
+  await setLocalGitConfigIfMissing(dir, "user.name", WORKSPACE_GIT_AUTHOR_NAME);
+  await setLocalGitConfigIfMissing(dir, "user.email", WORKSPACE_GIT_AUTHOR_EMAIL);
+}
+
 export async function ensureAgentWorkspace(params?: {
   dir?: string;
   ensureBootstrapFiles?: boolean;
@@ -359,6 +412,7 @@ export async function ensureAgentWorkspace(params?: {
     await writeWorkspaceOnboardingState(statePath, state);
   }
   await ensureGitRepo(dir, isBrandNewWorkspace);
+  await ensureWorkspaceGitAuthorConfig(dir);
 
   return {
     dir,

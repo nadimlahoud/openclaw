@@ -4,12 +4,42 @@ import { connectGateway } from "./app-gateway.ts";
 type GatewayClientMock = {
   start: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
+  emitHello: (hello: { snapshot?: unknown }) => void;
   emitClose: (code: number, reason?: string) => void;
   emitGap: (expected: number, received: number) => void;
   emitEvent: (evt: { event: string; payload?: unknown; seq?: number }) => void;
 };
 
 const gatewayClientInstances: GatewayClientMock[] = [];
+
+vi.mock("./app-settings.ts", () => ({
+  applySettings: vi.fn((host: { settings: unknown }, next: unknown) => {
+    host.settings = next;
+  }),
+  loadCron: vi.fn(),
+  refreshActiveTab: vi.fn().mockResolvedValue(undefined),
+  setLastActiveSessionKey: vi.fn(
+    (host: { settings: { lastActiveSessionKey: string } }, key: string) => {
+      host.settings.lastActiveSessionKey = key;
+    },
+  ),
+}));
+
+vi.mock("./controllers/assistant-identity.ts", () => ({
+  loadAssistantIdentity: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./controllers/agents.ts", () => ({
+  loadAgents: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./controllers/nodes.ts", () => ({
+  loadNodes: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./controllers/devices.ts", () => ({
+  loadDevices: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("./gateway.ts", () => {
   class GatewayBrowserClient {
@@ -18,6 +48,7 @@ vi.mock("./gateway.ts", () => {
 
     constructor(
       private opts: {
+        onHello?: (hello: { snapshot?: unknown }) => void;
         onClose?: (info: { code: number; reason: string }) => void;
         onGap?: (info: { expected: number; received: number }) => void;
         onEvent?: (evt: { event: string; payload?: unknown; seq?: number }) => void;
@@ -26,6 +57,9 @@ vi.mock("./gateway.ts", () => {
       gatewayClientInstances.push({
         start: this.start,
         stop: this.stop,
+        emitHello: (hello) => {
+          this.opts.onHello?.(hello);
+        },
         emitClose: (code, reason) => {
           this.opts.onClose?.({ code, reason: reason ?? "" });
         },
@@ -76,6 +110,10 @@ function createHost() {
     assistantAgentId: null,
     sessionKey: "main",
     chatRunId: null,
+    toolStreamById: new Map(),
+    toolStreamOrder: [],
+    chatToolMessages: [],
+    toolStreamSyncTimer: null,
     refreshSessionsAfterChat: new Set<string>(),
     execApprovalQueue: [],
     execApprovalError: null,
@@ -85,6 +123,7 @@ function createHost() {
 describe("connectGateway", () => {
   beforeEach(() => {
     gatewayClientInstances.length = 0;
+    vi.clearAllMocks();
   });
 
   it("ignores stale client onGap callbacks after reconnect", () => {
@@ -142,5 +181,30 @@ describe("connectGateway", () => {
 
     secondClient.emitClose(1005);
     expect(host.lastError).toBe("disconnected (1005): no reason");
+  });
+
+  it("normalizes main aliases from snapshot defaults when mainSessionKey is absent", () => {
+    const host = createHost();
+    host.sessionKey = "agent:denver-move:main";
+    host.settings.sessionKey = "agent:denver-move:main";
+    host.settings.lastActiveSessionKey = "agent:denver-move:main";
+
+    connectGateway(host);
+    const client = gatewayClientInstances[0];
+    expect(client).toBeDefined();
+
+    client.emitHello({
+      snapshot: {
+        sessionDefaults: {
+          defaultAgentId: "denver-move",
+          mainKey: "heartbeat",
+        },
+      },
+    });
+
+    expect(host.connected).toBe(true);
+    expect(host.sessionKey).toBe("agent:denver-move:heartbeat");
+    expect(host.settings.sessionKey).toBe("agent:denver-move:heartbeat");
+    expect(host.settings.lastActiveSessionKey).toBe("agent:denver-move:heartbeat");
   });
 });

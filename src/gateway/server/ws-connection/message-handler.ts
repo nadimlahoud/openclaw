@@ -892,6 +892,7 @@ export function attachGatewayWsMessageHandler(params: {
             deviceFamily: nodeSession.deviceFamily,
             commands: nodeSession.commands,
             cfg: loadConfig(),
+            registry: context.nodeRegistry,
           }).catch((err) =>
             logGateway.warn(
               `remote bin probe failed for ${nodeSession.nodeId}: ${formatForLog(err)}`,

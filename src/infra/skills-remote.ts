@@ -252,8 +252,10 @@ export async function refreshRemoteNodeBins(params: {
   commands?: string[];
   cfg: OpenClawConfig;
   timeoutMs?: number;
+  registry?: NodeRegistry;
 }) {
-  if (!remoteRegistry) {
+  const registry = params.registry ?? remoteRegistry;
+  if (!registry) {
     return;
   }
   if (!isMacPlatform(params.platform, params.deviceFamily)) {
@@ -279,7 +281,7 @@ export async function refreshRemoteNodeBins(params: {
 
   try {
     const binsList = [...requiredBins];
-    const res = await remoteRegistry.invoke(
+    const res = await registry.invoke(
       canWhich
         ? {
             nodeId: params.nodeId,
@@ -342,10 +344,11 @@ export function getRemoteSkillEligibility(): SkillEligibilityContext["remote"] |
 }
 
 export async function refreshRemoteBinsForConnectedNodes(cfg: OpenClawConfig) {
-  if (!remoteRegistry) {
+  const registry = remoteRegistry;
+  if (!registry) {
     return;
   }
-  const connected = remoteRegistry.listConnected();
+  const connected = registry.listConnected();
   for (const node of connected) {
     await refreshRemoteNodeBins({
       nodeId: node.nodeId,
@@ -353,6 +356,7 @@ export async function refreshRemoteBinsForConnectedNodes(cfg: OpenClawConfig) {
       deviceFamily: node.deviceFamily,
       commands: node.commands,
       cfg,
+      registry,
     });
   }
 }

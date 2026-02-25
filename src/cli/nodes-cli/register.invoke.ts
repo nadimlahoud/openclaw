@@ -14,6 +14,7 @@ import {
 } from "../../infra/exec-approvals.js";
 import { buildNodeShellCommand } from "../../infra/node-shell.js";
 import { applyPathPrepend } from "../../infra/path-prepend.js";
+import { formatExecCommand } from "../../infra/system-run-command.js";
 import { defaultRuntime } from "../../runtime.js";
 import { parseEnvPairs, parseTimeoutMs } from "../nodes-run.js";
 import { getNodesTheme, runNodesCommand } from "./cli-utils.js";
@@ -237,6 +238,7 @@ export function registerNodesInvokeCommands(nodes: Command) {
           if (requiresAsk) {
             approvalId = crypto.randomUUID();
             const approvalTimeoutMs = DEFAULT_EXEC_APPROVAL_TIMEOUT_MS;
+            const cmdText = rawCommand ?? formatExecCommand(argv);
             // The CLI transport timeout (opts.timeout) must be longer than the
             // gateway-side approval wait so the connection stays alive while the
             // user decides.  Without this override the default 35 s transport
@@ -251,7 +253,7 @@ export function registerNodesInvokeCommands(nodes: Command) {
               opts,
               {
                 id: approvalId,
-                command: rawCommand ?? argv.join(" "),
+                command: cmdText,
                 cwd: opts.cwd,
                 host: "node",
                 security: hostSecurity,

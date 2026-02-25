@@ -133,10 +133,30 @@ _clawdock_ensure_dir() {
   return 0
 }
 
-# Wrapper to run docker compose commands
+# Resolve the available Docker Compose command
+_clawdock_compose_cmd() {
+  if command docker compose version >/dev/null 2>&1; then
+    printf '%s\n' "docker compose"
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    printf '%s\n' "docker-compose"
+    return 0
+  fi
+  echo "❌ Error: Docker Compose not found. Install 'docker compose' or 'docker-compose'." >&2
+  return 1
+}
+
+# Wrapper to run Docker Compose commands
 _clawdock_compose() {
   _clawdock_ensure_dir || return 1
-  command docker compose -f "${CLAWDOCK_DIR}/docker-compose.yml" "$@"
+  local compose_cmd
+  compose_cmd=$(_clawdock_compose_cmd) || return 1
+  if [[ "$compose_cmd" == "docker compose" ]]; then
+    command docker compose -f "${CLAWDOCK_DIR}/docker-compose.yml" "$@"
+  else
+    command docker-compose -f "${CLAWDOCK_DIR}/docker-compose.yml" "$@"
+  fi
 }
 
 _clawdock_read_env_token() {

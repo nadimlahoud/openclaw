@@ -27,6 +27,11 @@ import {
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadSessions } from "./controllers/sessions.ts";
 import { GatewayBrowserClient } from "./gateway.ts";
+import {
+  isMainSessionAlias,
+  resolveSnapshotMainSessionKey,
+  type SessionDefaultsSnapshot,
+} from "./session-defaults.ts";
 
 type GatewayHost = {
   settings: UiSettings;
@@ -56,37 +61,24 @@ type GatewayHost = {
   execApprovalError: string | null;
 };
 
-type SessionDefaultsSnapshot = {
-  defaultAgentId?: string;
-  mainKey?: string;
-  mainSessionKey?: string;
-  scope?: string;
-};
-
 function normalizeSessionKeyForDefaults(
   value: string | undefined,
   defaults: SessionDefaultsSnapshot,
 ): string {
   const raw = (value ?? "").trim();
-  const mainSessionKey = defaults.mainSessionKey?.trim();
+  const mainSessionKey = resolveSnapshotMainSessionKey(defaults);
   if (!mainSessionKey) {
     return raw;
   }
   if (!raw) {
     return mainSessionKey;
   }
-  const mainKey = defaults.mainKey?.trim() || "main";
-  const defaultAgentId = defaults.defaultAgentId?.trim();
-  const isAlias =
-    raw === "main" ||
-    raw === mainKey ||
-    (defaultAgentId &&
-      (raw === `agent:${defaultAgentId}:main` || raw === `agent:${defaultAgentId}:${mainKey}`));
-  return isAlias ? mainSessionKey : raw;
+  return isMainSessionAlias(raw, defaults) ? mainSessionKey : raw;
 }
 
 function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnapshot) {
-  if (!defaults?.mainSessionKey) {
+  const mainSessionKey = resolveSnapshotMainSessionKey(defaults);
+  if (!mainSessionKey) {
     return;
   }
   const resolvedSessionKey = normalizeSessionKeyForDefaults(host.sessionKey, defaults);

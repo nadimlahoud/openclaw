@@ -186,6 +186,43 @@ describe("nodes run", () => {
     expect(invokeCalls).toBe(2);
   });
 
+  it("formats approval command text with argv quoting", async () => {
+    let invokeCalls = 0;
+    callGateway.mockImplementation(async ({ method, params }) => {
+      if (method === "node.list") {
+        return { nodes: [{ nodeId: "mac-1", commands: ["system.run"] }] };
+      }
+      if (method === "node.invoke") {
+        invokeCalls += 1;
+        if (invokeCalls === 1) {
+          throw new Error("SYSTEM_RUN_DENIED: approval required");
+        }
+        return { payload: { stdout: "", stderr: "", exitCode: 0, success: true } };
+      }
+      if (method === "exec.approval.request") {
+        expect(params).toMatchObject({
+          command: 'date "+%Y-%m-%d %Z"',
+          host: "node",
+          timeoutMs: 120_000,
+        });
+        return { decision: "allow-once" };
+      }
+      throw new Error(`unexpected method: ${String(method)}`);
+    });
+
+    const tool = createOpenClawTools().find((candidate) => candidate.name === "nodes");
+    if (!tool) {
+      throw new Error("missing nodes tool");
+    }
+
+    await tool.execute("call1", {
+      action: "run",
+      node: "mac-1",
+      command: ["date", "+%Y-%m-%d %Z"],
+    });
+    expect(invokeCalls).toBe(2);
+  });
+
   it("fails with user denied when approval decision is deny", async () => {
     callGateway.mockImplementation(async ({ method }) => {
       if (method === "node.list") {

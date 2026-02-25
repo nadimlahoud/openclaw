@@ -405,6 +405,46 @@ describe("Integration: saveSessionStore with pruning", () => {
     expect(loaded.fresh).toBeDefined();
   });
 
+  it("loadSessionStore strips synthetic routing markers from legacy entries", async () => {
+    const key = "agent:main:legacy";
+    const entry: SessionEntry = {
+      sessionId: crypto.randomUUID(),
+      updatedAt: Date.now(),
+      channel: "heartbeat",
+      lastChannel: "heartbeat",
+      lastTo: "heartbeat",
+      lastAccountId: "acct-1",
+      lastThreadId: "thread-1",
+      origin: {
+        provider: "heartbeat",
+        label: "heartbeat",
+        from: "heartbeat",
+        to: "heartbeat",
+        threadId: "thread-1",
+      },
+      deliveryContext: {
+        channel: "heartbeat",
+        to: "heartbeat",
+        accountId: "acct-1",
+        threadId: "thread-1",
+      },
+    };
+    await fs.writeFile(storePath, JSON.stringify({ [key]: entry }, null, 2), "utf-8");
+
+    const loaded = loadSessionStore(storePath);
+    expect(loaded[key]?.channel).toBeUndefined();
+    expect(loaded[key]?.lastChannel).toBeUndefined();
+    expect(loaded[key]?.lastTo).toBeUndefined();
+    expect(loaded[key]?.origin?.provider).toBeUndefined();
+    expect(loaded[key]?.origin?.label).toBeUndefined();
+    expect(loaded[key]?.origin?.from).toBeUndefined();
+    expect(loaded[key]?.origin?.to).toBeUndefined();
+    expect(loaded[key]?.deliveryContext?.channel).toBeUndefined();
+    expect(loaded[key]?.deliveryContext?.to).toBeUndefined();
+    expect(loaded[key]?.deliveryContext?.accountId).toBe("acct-1");
+    expect(loaded[key]?.deliveryContext?.threadId).toBe("thread-1");
+  });
+
   it("saveSessionStore caps entries over limit", async () => {
     mockLoadConfig.mockReturnValue({
       session: {

@@ -24,6 +24,13 @@ describe("parseSessionKey", () => {
     });
   });
 
+  it("identifies main session for custom agent main alias", () => {
+    expect(parseSessionKey("agent:denver-move:main")).toEqual({
+      prefix: "",
+      fallbackName: "Main Session",
+    });
+  });
+
   it("identifies subagent sessions", () => {
     expect(parseSessionKey("agent:main:subagent:18abfefe-1fa6-43cb-8ba8-ebdc9b43e253")).toEqual({
       prefix: "Subagent:",
@@ -101,6 +108,10 @@ describe("resolveSessionDisplayName", () => {
 
   it("returns 'Main Session' for agent:main:main key", () => {
     expect(resolveSessionDisplayName("agent:main:main")).toBe("Main Session");
+  });
+
+  it("returns 'Main Session' for agent:<custom>:main key", () => {
+    expect(resolveSessionDisplayName("agent:denver-move:main")).toBe("Main Session");
   });
 
   it("returns 'Main Session' for bare 'main' key", () => {

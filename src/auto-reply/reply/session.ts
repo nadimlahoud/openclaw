@@ -54,6 +54,13 @@ export type SessionInitResult = {
   triggerBodyNormalized: string;
 };
 
+function isSyntheticSessionMetadataSource(ctx: MsgContext): boolean {
+  const provider = ctx.Provider?.trim().toLowerCase();
+  // Heartbeat/cron synthetic turns reuse the active session and should not
+  // replace user-facing routing/origin metadata with internal placeholders.
+  return provider === "heartbeat" || provider === "cron-event" || provider === "exec-event";
+}
+
 function forkSessionFromParent(params: {
   parentEntry: SessionEntry;
   agentId: string;
@@ -254,11 +261,20 @@ export async function initSessionState(params: {
   }
 
   const baseEntry = !isNewSession && freshEntry ? entry : undefined;
+  const syntheticSessionMetadataSource = isSyntheticSessionMetadataSource(sessionCtxForState);
   // Track the originating channel/to for announce routing (subagent announce-back).
-  const lastChannelRaw = (ctx.OriginatingChannel as string | undefined) || baseEntry?.lastChannel;
-  const lastToRaw = ctx.OriginatingTo || ctx.To || baseEntry?.lastTo;
-  const lastAccountIdRaw = ctx.AccountId || baseEntry?.lastAccountId;
-  const lastThreadIdRaw = ctx.MessageThreadId || baseEntry?.lastThreadId;
+  const lastChannelRaw = syntheticSessionMetadataSource
+    ? baseEntry?.lastChannel
+    : (ctx.OriginatingChannel as string | undefined) || baseEntry?.lastChannel;
+  const lastToRaw = syntheticSessionMetadataSource
+    ? baseEntry?.lastTo
+    : ctx.OriginatingTo || ctx.To || baseEntry?.lastTo;
+  const lastAccountIdRaw = syntheticSessionMetadataSource
+    ? baseEntry?.lastAccountId
+    : ctx.AccountId || baseEntry?.lastAccountId;
+  const lastThreadIdRaw = syntheticSessionMetadataSource
+    ? baseEntry?.lastThreadId
+    : ctx.MessageThreadId || baseEntry?.lastThreadId;
   const deliveryFields = normalizeSessionDeliveryFields({
     deliveryContext: {
       channel: lastChannelRaw,
@@ -304,12 +320,14 @@ export async function initSessionState(params: {
     lastAccountId,
     lastThreadId,
   };
-  const metaPatch = deriveSessionMetaPatch({
-    ctx: sessionCtxForState,
-    sessionKey,
-    existing: sessionEntry,
-    groupResolution,
-  });
+  const metaPatch = syntheticSessionMetadataSource
+    ? null
+    : deriveSessionMetaPatch({
+        ctx: sessionCtxForState,
+        sessionKey,
+        existing: sessionEntry,
+        groupResolution,
+      });
   if (metaPatch) {
     sessionEntry = { ...sessionEntry, ...metaPatch };
   }

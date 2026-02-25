@@ -28,6 +28,9 @@ Sandboxing details: [Sandboxing](/gateway/sandboxing)
 - Docker Desktop (or Docker Engine) + Docker Compose v2
 - Enough disk for images + logs
 
+Commands below use `docker compose`. If your host only provides the standalone
+binary, replace `docker compose` with `docker-compose`.
+
 ## Containerized Gateway (Docker Compose)
 
 ### Quick start (recommended)

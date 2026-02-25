@@ -10,23 +10,15 @@ import { OpenClawApp } from "./app.ts";
 import { ChatState, loadChatHistory } from "./controllers/chat.ts";
 import { icons } from "./icons.ts";
 import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
-
-type SessionDefaultsSnapshot = {
-  mainSessionKey?: string;
-  mainKey?: string;
-};
+import { resolveSnapshotMainSessionKey, type SessionDefaultsSnapshot } from "./session-defaults.ts";
 
 function resolveSidebarChatSessionKey(state: AppViewState): string {
   const snapshot = state.hello?.snapshot as
     | { sessionDefaults?: SessionDefaultsSnapshot }
     | undefined;
-  const mainSessionKey = snapshot?.sessionDefaults?.mainSessionKey?.trim();
-  if (mainSessionKey) {
-    return mainSessionKey;
-  }
-  const mainKey = snapshot?.sessionDefaults?.mainKey?.trim();
-  if (mainKey) {
-    return mainKey;
+  const resolvedMainSessionKey = resolveSnapshotMainSessionKey(snapshot?.sessionDefaults);
+  if (resolvedMainSessionKey) {
+    return resolvedMainSessionKey;
   }
   return "main";
 }
@@ -242,13 +234,9 @@ function resolveMainSessionKey(
   sessions: SessionsListResult | null,
 ): string | null {
   const snapshot = hello?.snapshot as { sessionDefaults?: SessionDefaultsSnapshot } | undefined;
-  const mainSessionKey = snapshot?.sessionDefaults?.mainSessionKey?.trim();
-  if (mainSessionKey) {
-    return mainSessionKey;
-  }
-  const mainKey = snapshot?.sessionDefaults?.mainKey?.trim();
-  if (mainKey) {
-    return mainKey;
+  const resolvedMainSessionKey = resolveSnapshotMainSessionKey(snapshot?.sessionDefaults);
+  if (resolvedMainSessionKey) {
+    return resolvedMainSessionKey;
   }
   if (sessions?.sessions?.some((row) => row.key === "main")) {
     return "main";
@@ -289,7 +277,7 @@ function capitalize(s: string): string {
  */
 export function parseSessionKey(key: string): SessionKeyInfo {
   // ── Main session ─────────────────────────────────
-  if (key === "main" || key === "agent:main:main") {
+  if (key === "main" || /^agent:[^:]+:main$/i.test(key)) {
     return { prefix: "", fallbackName: "Main Session" };
   }
 
@@ -356,7 +344,6 @@ function resolveSessionOptions(
   const seen = new Set<string>();
   const options: Array<{ key: string; displayName?: string }> = [];
 
-  const resolvedMain = mainSessionKey && sessions?.sessions?.find((s) => s.key === mainSessionKey);
   const resolvedCurrent = sessions?.sessions?.find((s) => s.key === sessionKey);
 
   // Add main session key first
@@ -364,7 +351,7 @@ function resolveSessionOptions(
     seen.add(mainSessionKey);
     options.push({
       key: mainSessionKey,
-      displayName: resolveSessionDisplayName(mainSessionKey, resolvedMain || undefined),
+      displayName: "Main Session",
     });
   }
 

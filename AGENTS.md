@@ -168,6 +168,7 @@
 - **Multi-agent safety:** do **not** switch branches / check out a different branch unless explicitly requested.
 - **Multi-agent safety:** running multiple agents is OK as long as each agent has its own session.
 - **Multi-agent safety:** when you see unrecognized files, keep going; focus on your changes and commit only those.
+- Docker runtime on this Mac is **OrbStack** (`docker context show` should be `orbstack`). Use Docker CLI against OrbStack; do not rely on Docker Desktop-only behaviors, prompts, or credential helpers.
 - Lint/format churn:
   - If staged+unstaged diffs are formatting-only, auto-resolve without asking.
   - If commit/push already requested, auto-stage and include formatting-only follow-ups in the same commit (or a tiny follow-up commit if needed), no extra confirmation.

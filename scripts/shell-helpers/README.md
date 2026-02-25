@@ -1,6 +1,6 @@
 # ClawDock <!-- omit in toc -->
 
-Stop typing `docker-compose` commands. Just type `clawdock-start`.
+Stop typing raw Docker Compose commands. Just type `clawdock-start`.
 
 Inspired by Simon Willison's [Running OpenClaw in Docker](https://til.simonwillison.net/llms/openclaw-docker).
 
@@ -37,6 +37,9 @@ echo 'source ~/.clawdock/clawdock-helpers.sh' >> ~/.zshrc && source ~/.zshrc
 ```bash
 clawdock-help
 ```
+
+ClawDock auto-detects Docker Compose (`docker compose` plugin or
+`docker-compose` binary).
 
 On first command, ClawDock auto-detects your OpenClaw directory:
 
@@ -207,7 +210,7 @@ docker ps
 
 ## Requirements
 
-- Docker and Docker Compose installed
+- Docker and Docker Compose installed (`docker compose` plugin or `docker-compose` binary)
 - Bash or Zsh shell
 - OpenClaw project (from `docker-setup.sh`)
 

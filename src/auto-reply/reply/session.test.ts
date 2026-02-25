@@ -284,6 +284,67 @@ describe("initSessionState RawBody", () => {
   });
 });
 
+describe("initSessionState synthetic run metadata", () => {
+  for (const provider of ["heartbeat", "cron-event", "exec-event"] as const) {
+    it(`does not overwrite stored routing metadata for ${provider} runs`, async () => {
+      const root = await makeCaseDir(`openclaw-${provider}-meta-`);
+      const storePath = path.join(root, "sessions.json");
+      const sessionKey = "agent:main:main";
+      const existingSessionId = `${provider}-session`;
+      await saveSessionStore(storePath, {
+        [sessionKey]: {
+          sessionId: existingSessionId,
+          updatedAt: Date.now(),
+          lastChannel: "whatsapp",
+          lastTo: "+15551234567",
+          lastAccountId: "work",
+          lastThreadId: "42",
+          origin: {
+            label: "Alice",
+            provider: "whatsapp",
+            from: "+15551234567",
+            to: "+15551234567",
+          },
+        },
+      });
+
+      const cfg = {
+        session: {
+          store: storePath,
+          reset: { mode: "idle", idleMinutes: 1_440 },
+        },
+      } as OpenClawConfig;
+
+      const result = await initSessionState({
+        ctx: {
+          Body: `${provider} ping`,
+          SessionKey: sessionKey,
+          Provider: provider,
+          From: provider,
+          To: provider,
+        },
+        cfg,
+        commandAuthorized: true,
+      });
+
+      expect(result.isNewSession).toBe(false);
+      expect(result.sessionId).toBe(existingSessionId);
+      expect(result.sessionEntry.lastChannel).toBe("whatsapp");
+      expect(result.sessionEntry.lastTo).toBe("+15551234567");
+      expect(result.sessionEntry.lastAccountId).toBe("work");
+      expect(result.sessionEntry.lastThreadId).toBe("42");
+      expect(result.sessionEntry.origin).toEqual(
+        expect.objectContaining({
+          label: "Alice",
+          provider: "whatsapp",
+          from: "+15551234567",
+          to: "+15551234567",
+        }),
+      );
+    });
+  }
+});
+
 describe("initSessionState reset policy", () => {
   beforeEach(() => {
     vi.useFakeTimers();

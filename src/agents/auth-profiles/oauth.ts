@@ -1,9 +1,4 @@
-import {
-  getOAuthApiKey,
-  getOAuthProviders,
-  type OAuthCredentials,
-  type OAuthProvider,
-} from "@mariozechner/pi-ai";
+import type { OAuthCredentials, OAuthProvider } from "@mariozechner/pi-ai";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { AuthProfileStore } from "./types.js";
 import { withFileLock } from "../../infra/file-lock.js";
@@ -15,13 +10,44 @@ import { ensureAuthStoreFile, resolveAuthStorePath } from "./paths.js";
 import { suggestOAuthProfileIdForLegacyDefault } from "./repair.js";
 import { ensureAuthProfileStore, saveAuthProfileStore } from "./store.js";
 
-const OAUTH_PROVIDER_IDS = new Set<string>(getOAuthProviders().map((provider) => provider.id));
+let oauthRuntimePromise: Promise<{
+  getOAuthApiKey: (
+    provider: OAuthProvider,
+    credentials: Record<string, OAuthCredentials>,
+  ) => Promise<{ apiKey: string; newCredentials: OAuthCredentials } | null>;
+  getOAuthProviders: () => Array<{ id: string }>;
+}> | null = null;
 
-const isOAuthProvider = (provider: string): provider is OAuthProvider =>
-  OAUTH_PROVIDER_IDS.has(provider);
+let oauthProviderIdSetPromise: Promise<Set<string>> | null = null;
 
-const resolveOAuthProvider = (provider: string): OAuthProvider | null =>
-  isOAuthProvider(provider) ? provider : null;
+async function loadOAuthRuntime() {
+  if (!oauthRuntimePromise) {
+    // Avoid eager-loading all pi-ai provider modules during unrelated startup paths.
+    oauthRuntimePromise = import("@mariozechner/pi-ai").then(
+      ({ getOAuthApiKey, getOAuthProviders }) => ({
+        getOAuthApiKey,
+        getOAuthProviders,
+      }),
+    );
+  }
+  return await oauthRuntimePromise;
+}
+
+async function loadOAuthProviderIdSet(): Promise<Set<string>> {
+  if (!oauthProviderIdSetPromise) {
+    oauthProviderIdSetPromise = loadOAuthRuntime().then(
+      ({ getOAuthProviders }) =>
+        new Set<string>(getOAuthProviders().map((provider) => provider.id)),
+    );
+  }
+  return await oauthProviderIdSetPromise;
+}
+
+const isOAuthProvider = async (provider: string): Promise<boolean> =>
+  (await loadOAuthProviderIdSet()).has(provider);
+
+const resolveOAuthProvider = async (provider: string): Promise<OAuthProvider | null> =>
+  (await isOAuthProvider(provider)) ? provider : null;
 
 function buildOAuthApiKey(provider: string, credentials: OAuthCredentials): string {
   const needsProjectId = provider === "google-gemini-cli" || provider === "google-antigravity";
@@ -72,10 +98,11 @@ async function refreshOAuthTokenWithLock(params: {
               return { apiKey: newCredentials.access, newCredentials };
             })()
           : await (async () => {
-              const oauthProvider = resolveOAuthProvider(cred.provider);
+              const oauthProvider = await resolveOAuthProvider(cred.provider);
               if (!oauthProvider) {
                 return null;
               }
+              const { getOAuthApiKey } = await loadOAuthRuntime();
               return await getOAuthApiKey(oauthProvider, oauthCreds);
             })();
     if (!result) {
